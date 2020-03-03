@@ -1,3 +1,7 @@
+=== FW 1.2 ===
+* Enable control during intro screen.
+* Show firmware version in temperature screen.
+
 === FW 1.1 ===
 * Handle handle_esb_rx in thread to avoid using float in an interrupt, as that is not allowed.
 * Added imperial unit support.

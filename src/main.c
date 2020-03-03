@@ -46,7 +46,7 @@
 
 // Defines
 #define FW_MAJOR		1
-#define FW_MINOR		0
+#define FW_MINOR		2
 
 #define SW1_PIN			19
 #define SW1_PIN2		NRF_GPIO_PIN_MAP(1, 1)
@@ -387,6 +387,12 @@ void main(void) {
 	nrf_gpio_cfg_input(SW2_PIN, NRF_GPIO_PIN_PULLUP);
 	nrf_gpio_cfg_output(JS_GND_PIN);
 
+	// TODO: Test performance with
+	// https://devzone.nordicsemi.com/f/nordic-q-a/15093/change-clock-speed-nrf52
+
+	// TODO: try
+	// https://devzone.nordicsemi.com/f/nordic-q-a/15243/high-power-consumption-when-using-fpu
+
 	struct flash_pages_info info;
 	int rc = 0;
 
@@ -452,10 +458,10 @@ void main(void) {
 		NRF_WDT->RR[0] = WDT_RR_RR_Reload;
 
 		// TODO: Remove this so that controls work during intro?
-		if (!intro_done) {
-			k_sleep(10);
-			continue;
-		}
+//		if (!intro_done) {
+//			k_sleep(10);
+//			continue;
+//		}
 
 		float js = v_js * 2.0 - 1.0;
 
@@ -868,6 +874,17 @@ void display_thd(void) {
 			utils_truncate_number(&temp_motor, -99, 499);
 
 			oled_printf_aa(font_aa_11x21, 42, 76, 15, "%.0f ", temp_motor);
+
+			static int version_cnt = 0;
+			version_cnt++;
+			if (version_cnt > 100) {
+				version_cnt = 0;
+			}
+
+			if (version_cnt > 50) {
+				oled_fill_rectangle(0, 107, 120, 40, 0);
+				oled_printf_aa(font_aa_8x16, 8, 110, 15,     "    v %d.%d     ", FW_MAJOR, FW_MINOR);
+			}
 		}
 
 		if (screen_offset_y > 0) {
