@@ -15,21 +15,24 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
     */
 
+#define CONFIG_DEPRECATED_ZEPHYR_INT_TYPES
+
 #include <zephyr.h>
 #include <device.h>
-#include <gpio.h>
-#include <adc.h>
+#include <drivers/gpio.h>
+#include <drivers/adc.h>
 #include <nrfx.h>
 #include <nrf52840.h>
+//#include <nrf52.h>
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
 #include <stdlib.h>
-#include <clock_control.h>
+#include <drivers/clock_control.h>
 #include <hal/nrf_gpio.h>
-#include <adc.h>
-#include <flash.h>
-#include <nvs/nvs.h>
+#include <drivers/flash.h>
+#include <fs/nvs.h>
+#include <storage/flash_map.h>
 
 #include "nrf_esb.h"
 #include "crc.h"
@@ -46,7 +49,7 @@
 
 // Defines
 #define FW_MAJOR		1
-#define FW_MINOR		2
+#define FW_MINOR		3
 
 #define SW1_PIN			19
 #define SW1_PIN2		NRF_GPIO_PIN_MAP(1, 1)
@@ -159,6 +162,7 @@ int esb_init(void) {
 	nrf_esb_config.selective_auto_ack = false;
 	nrf_esb_config.crc = NRF_ESB_CRC_8BIT;
 	nrf_esb_config.tx_output_power = NRF_ESB_TX_POWER_8DBM;
+//	nrf_esb_config.tx_output_power = NRF_ESB_TX_POWER_4DBM;
 
 	int err;
 
@@ -178,7 +182,7 @@ int esb_init(void) {
 void esb_wait_idle(void) {
 	int cnt = 0;
 	while(!nrf_esb_is_idle()) {
-		k_sleep(1);
+		k_msleep(1);
 		cnt++;
 
 		if (cnt >= 10) {
@@ -280,20 +284,23 @@ static uint32_t crc32c(uint8_t *data, uint32_t len) {
 }
 
 int clocks_start(void) {
-	int err;
-	struct device *hfclk;
+	NRF_CLOCK->TASKS_HFCLKSTART = 1;
+	while (NRF_CLOCK->EVENTS_HFCLKSTARTED == 0);
+	NRF_CLOCK->EVENTS_HFCLKSTARTED = 0;
 
-	hfclk = device_get_binding(DT_NORDIC_NRF_CLOCK_40000000_LABEL "_16M");
-	if (!hfclk) {
-		printk("HF Clock device not found!\r\n");
-		return -EIO;
-	}
-
-	err = clock_control_on(hfclk, NULL);
-	if (err && (err != -EINPROGRESS)) {
-		printk("HF clock start fail: %d\r\n", err);
-		return err;
-	}
+	/*
+	 * HFCLK is required to run ESB, as the RC clock is not accurate enough to run the radio.
+	 *
+	 * It is no longer possible to start HFCLK manually in zephyr. If it is started as above
+	 * some driver turns it off all the time, so the code above has to be run over and over
+	 * somewhere.
+	 *
+	 * One way to work around that is setting
+	 *
+	 * CONFIG_CLOCK_CONTROL_NRF_K32SRC_SYNTH=y
+	 *
+	 * in prj.conf, as this will keep HFCLK on to synthesize the 32 kHz clock from HFCLK.
+	 */
 
 	printk("HF clock started\r\n");
 	return 0;
@@ -318,7 +325,7 @@ void go_to_sleep(void) {
 
 		sleep_in_ms -= 20;
 		NRF_WDT->RR[0] = WDT_RR_RR_Reload;
-		k_sleep(20);
+		k_msleep(20);
 
 		if (esb_no_rx_cnt < 5) {
 			sleep_in_ms = -1;
@@ -330,7 +337,7 @@ void go_to_sleep(void) {
 
 	for (int i = 0;i < 10;i++) {
 		NRF_WDT->RR[0] = WDT_RR_RR_Reload;
-		k_sleep(100);
+		k_msleep(100);
 	}
 
 	nrf_esb_disable();
@@ -350,7 +357,7 @@ void go_to_sleep_long_press(void) {
 	while (sleep_in_ms > 0) {
 		sleep_in_ms -= 20;
 		NRF_WDT->RR[0] = WDT_RR_RR_Reload;
-		k_sleep(20);
+		k_msleep(20);
 
 		if (!SW2) {
 			sleep_in_ms = -1;
@@ -362,12 +369,12 @@ void go_to_sleep_long_press(void) {
 
 	for (int i = 0;i < 10;i++) {
 		NRF_WDT->RR[0] = WDT_RR_RR_Reload;
-		k_sleep(100);
+		k_msleep(100);
 	}
 
 	while (SW2) {
 		NRF_WDT->RR[0] = WDT_RR_RR_Reload;
-		k_sleep(20);
+		k_msleep(20);
 	}
 
 	nrf_esb_disable();
@@ -396,8 +403,8 @@ void main(void) {
 	struct flash_pages_info info;
 	int rc = 0;
 
-	fs.offset = DT_FLASH_AREA_STORAGE_OFFSET;
-	rc = flash_get_page_info_by_offs(device_get_binding(DT_FLASH_DEV_NAME), fs.offset, &info);
+	fs.offset = FLASH_AREA_OFFSET(storage);;
+	rc = flash_get_page_info_by_offs(device_get_binding(DT_CHOSEN_ZEPHYR_FLASH_CONTROLLER_LABEL), fs.offset, &info);
 	if (rc) {
 		printk("Unable to get page info");
 	}
@@ -405,7 +412,7 @@ void main(void) {
 	fs.sector_size = info.size;
 	fs.sector_count = 2;
 
-	rc = nvs_init(&fs, DT_FLASH_DEV_NAME);
+	rc = nvs_init(&fs, DT_CHOSEN_ZEPHYR_FLASH_CONTROLLER_LABEL);
 	if (rc) {
 		printk("Flash Init failed\n");
 	}
@@ -454,14 +461,14 @@ void main(void) {
 	float sw2_time = 0.0;
 	bool imperial_toggled = false;
 
+	// Wait for buttons to be released
+	while(SW1 || SW2) {
+		k_msleep(10);
+	}
+	k_msleep(100);
+
 	for(;;) {
 		NRF_WDT->RR[0] = WDT_RR_RR_Reload;
-
-		// TODO: Remove this so that controls work during intro?
-//		if (!intro_done) {
-//			k_sleep(10);
-//			continue;
-//		}
 
 		float js = v_js * 2.0 - 1.0;
 
@@ -598,10 +605,10 @@ void main(void) {
 		esb_wait_idle();
 		nrf_esb_start_rx();
 
-		k_sleep(20);
+		k_msleep(20);
 
 		esb_no_rx_cnt++;
-		if (esb_no_rx_cnt >= 1000) {
+		if (esb_no_rx_cnt >= 1000000) {// 1000) {
 			go_to_sleep();
 		}
 	}
@@ -639,7 +646,7 @@ void display_thd(void) {
 		} else if (phase == 2) {
 			brightness--;
 			if (brightness == -1) {
-				k_sleep(200);
+				k_msleep(200);
 				break;
 			}
 		}
@@ -664,7 +671,7 @@ void display_thd(void) {
 
 		while (sleep_next_ms > 0) {
 			NRF_WDT->RR[1] = WDT_RR_RR_Reload;
-			k_sleep(10);
+			k_msleep(10);
 			sleep_next_ms -= 10;
 		}
 	}
@@ -687,7 +694,7 @@ void display_thd(void) {
 			oled_sleep();
 			for(;;) {
 				NRF_WDT->RR[1] = WDT_RR_RR_Reload;
-				k_sleep(10);
+				k_msleep(10);
 			}
 		}
 
@@ -703,7 +710,7 @@ void display_thd(void) {
 			oled_printf_aa(font_aa_16x24, 8 * 4, 16 * 3, 15, "%.2f", (float)sleep_in_ms / 1000.0);
 			oled_fill_rectangle(0, 80, (sleep_in_ms * 128) / sleep_in_ms_start_time, 10, 15);
 			oled_show_buffer();
-			k_sleep(10);
+			k_msleep(10);
 			continue;
 		}
 
@@ -729,7 +736,7 @@ void display_thd(void) {
 			}
 
 			oled_show_buffer();
-			k_sleep(10);
+			k_msleep(10);
 			continue;
 		}
 
@@ -758,7 +765,7 @@ void display_thd(void) {
 			oled_printf_aa(font_aa_8x16, 8, 82, 15,     "    units     ");
 
 			oled_show_buffer();
-			k_sleep(10);
+			k_msleep(10);
 			continue;
 		}
 
@@ -788,6 +795,9 @@ void display_thd(void) {
 
 			// Print difference between pull-samples for joystick.
 //			oled_printf_aa(font_aa_11x21, 31, 100, 15, "%.2f", v_js_avg_diff);
+
+			// Print roll
+//			oled_printf_aa(font_aa_11x21, 31, 100, 15, "%.3f", imu_get_roll());
 
 			// Print received packet counter
 //			oled_printf_aa(font_aa_11x21, 31, 100, 15, "%d", esb_rx_cnt);
@@ -936,12 +946,12 @@ void display_thd(void) {
 		}
 
 		oled_show_buffer();
-		k_sleep(10);
+		k_msleep(10);
 	}
 }
 
 void adc_sample_thd(void) {
-	struct device *adc_dev = device_get_binding(DT_ADC_0_NAME);
+	const struct device *adc_dev = device_get_binding("ADC_0");
 	struct adc_channel_cfg channel_cfg;
 
 	channel_cfg.channel_id = 0;
@@ -980,12 +990,12 @@ void adc_sample_thd(void) {
 		if (going_to_sleep) {
 			for(;;) {
 				NRF_WDT->RR[2] = WDT_RR_RR_Reload;
-				k_sleep(10);
+				k_msleep(10);
 			}
 		}
 
 		JS_ON();
-		k_sleep(1);
+		k_msleep(1);
 		seq.channels = 1 << 0;
 
 		/*
@@ -998,11 +1008,11 @@ void adc_sample_thd(void) {
 		 */
 		int res = adc_read(adc_dev, &seq);
 		nrf_gpio_cfg_input(JS_C_PIN, NRF_GPIO_PIN_PULLUP);
-//		k_sleep(1);
+//		k_msleep(1);
 		float v_nom = (float)sample / 4095.0;
 		res += adc_read(adc_dev, &seq);
 		nrf_gpio_cfg_input(JS_C_PIN, NRF_GPIO_PIN_PULLDOWN);
-//		k_sleep(1);
+//		k_msleep(1);
 		float v_up = (float)sample / 4095.0;
 		res += adc_read(adc_dev, &seq);
 		float v_down = (float)sample / 4095.0;
@@ -1036,9 +1046,9 @@ void adc_sample_thd(void) {
 			UTILS_LP_FAST(v_batt, ((float)sample / 4095.0) * (0.6 * 6.0), 0.02);
 		}
 
-		k_sleep(4);
+		k_msleep(4);
 	}
 }
 
-K_THREAD_DEFINE(display_id, 2048, display_thd, NULL, NULL, NULL, 7, 0, K_MSEC(10));
-K_THREAD_DEFINE(adc_id, 4096, adc_sample_thd, NULL, NULL, NULL, 6, 0, K_MSEC(10));
+K_THREAD_DEFINE(display_id, 2048, display_thd, NULL, NULL, NULL, 7, 0, 10);
+K_THREAD_DEFINE(adc_id, 4096, adc_sample_thd, NULL, NULL, NULL, 6, 0, 10);

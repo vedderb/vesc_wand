@@ -1,9 +1,10 @@
 cmake_minimum_required(VERSION 3.13.1)
 
-include($ENV{ZEPHYR_BASE}/cmake/app/boilerplate.cmake NO_POLICY_SCOPE)
+find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(stick_remote)
 
-set(BOARD nrf52840_pca10056)
+set(BOARD nrf52840dk_nrf52840)
+#set(BOARD nrf52dk_nrf52832)
 
 target_sources(app PRIVATE src/main.c)
 target_sources(app PRIVATE src/nrf_esb.c)

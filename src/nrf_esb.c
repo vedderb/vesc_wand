@@ -3,9 +3,12 @@
  *
  * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
  */
+
+#define CONFIG_DEPRECATED_ZEPHYR_INT_TYPES
+
 #include <errno.h>
 #include <irq.h>
-#include <misc/byteorder.h>
+#include <sys/byteorder.h>
 #include <nrf.h>
 #include <nrf_esb.h>
 #include <stddef.h>

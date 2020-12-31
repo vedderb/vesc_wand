@@ -25,6 +25,7 @@
 #include <zephyr.h>
 #include <device.h>
 #include <hal/nrf_gpio.h>
+#include <sys/time_units.h>
 
 #include "i2c_bb.h"
 
@@ -156,7 +157,7 @@ static int8_t user_i2c_write(uint8_t dev_addr, uint8_t reg_addr, uint8_t *data, 
 }
 
 static void user_delay_ms(uint32_t ms) {
-	k_sleep(ms);
+	k_msleep(ms);
 }
 
 static void imu_sleep_sense(void) {
@@ -210,11 +211,11 @@ static void imu_sample_thd(void) {
 			nrf_gpio_cfg_default(NRF_GPIO_PIN_MAP(1, 3));
 
 			for(;;) {
-				k_sleep(100);
+				k_msleep(100);
 			}
 		}
 
-		float dt = ((float)SYS_CLOCK_HW_CYCLES_TO_NS(k_cycle_get_32() - start) / 1e9);
+		float dt = ((float)k_cyc_to_ns_floor64(k_cycle_get_32() - start) / 1e9);
 		start = k_cycle_get_32();
 
 		struct bmi160_sensor_data accel;
@@ -223,7 +224,7 @@ static void imu_sample_thd(void) {
 		int8_t res = bmi160_get_sensor_data((BMI160_ACCEL_SEL | BMI160_GYRO_SEL), &accel, &gyro, &sensor);
 
 		if (res != BMI160_OK) {
-			k_sleep(10);
+			k_msleep(10);
 			continue;
 		}
 
@@ -276,8 +277,8 @@ static void imu_sample_thd(void) {
 
 		ahrs_update_madgwick_imu(gyro_rad, m_accel, dt, (ATTITUDE_INFO*)&m_att);
 
-		k_sleep(10);
+		k_msleep(10);
 	}
 }
 
-K_THREAD_DEFINE(imu_id, 2048, imu_sample_thd, NULL, NULL, NULL, 7, 0, K_MSEC(10));
+K_THREAD_DEFINE(imu_id, 2048, imu_sample_thd, NULL, NULL, NULL, 7, 0, 10);

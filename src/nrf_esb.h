@@ -17,8 +17,9 @@
 #define CONFIG_NRF_ESB_PPI_RX_TIMEOUT				7
 #define CONFIG_NRF_ESB_PPI_TX_START					8
 
+#define CONFIG_DEPRECATED_ZEPHYR_INT_TYPES
+
 #include <errno.h>
-#include <misc/util.h>
 #include <nrf.h>
 #include <stdbool.h>
 #include <zephyr/types.h>

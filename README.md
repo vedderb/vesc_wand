@@ -16,7 +16,7 @@ source /path/to/zephyrproject/zephyr/zephyr-env.sh
 When the toolchain works, you can creade a build directory, from which you can run
 
 ```bash
-cmake -DBOARD=nrf52840_pca10056 -G "Eclipse CDT4 - Unix Makefiles" ../path_to_wand_fw/
+cmake -DBOARD=nrf52840dk_nrf52840 -G "Eclipse CDT4 - Unix Makefiles" ../path_to_wand_fw/
 ```
 
 Then build files and an eclipse project will be created in that directory. Then you can run

@@ -82,9 +82,9 @@ void oled_init(void) {
 	D1_LO();
 
 	RES_LO();
-	k_sleep(1);
+	k_msleep(1);
 	RES_HI();
-	k_sleep(1);
+	k_msleep(1);
 
 	write_cmd(SSD1327_SET_DISPLAY_OFF);
 
