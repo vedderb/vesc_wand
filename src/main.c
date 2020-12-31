@@ -464,6 +464,7 @@ void main(void) {
 	// Wait for buttons to be released
 	while(SW1 || SW2) {
 		k_msleep(10);
+		NRF_WDT->RR[0] = WDT_RR_RR_Reload;
 	}
 	k_msleep(100);
 
@@ -608,7 +609,7 @@ void main(void) {
 		k_msleep(20);
 
 		esb_no_rx_cnt++;
-		if (esb_no_rx_cnt >= 1000000) {// 1000) {
+		if (esb_no_rx_cnt >= 1000) {
 			go_to_sleep();
 		}
 	}
