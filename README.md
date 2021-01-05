@@ -25,7 +25,7 @@ If you want to build for the DWM1001 version, use this command instead
 cmake -DBOARD=nrf52dk_nrf52832 -G "Eclipse CDT4 - Unix Makefiles" ../path_to_wand_fw/
 ```
 
-For the DWM version, the following must also be undefined in the CMakeLists.txt file
+For the DWM version, the following must be uncommented in the CMakeLists.txt file
 
 ```bash
 # For the DWM1001
