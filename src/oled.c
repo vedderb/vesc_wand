@@ -26,6 +26,7 @@
 #include <device.h>
 #include <hal/nrf_gpio.h>
 
+#include "conf_general.h"
 #include "oled.h"
 #include "fonts.h"
 #include "utils.h"
@@ -34,27 +35,19 @@
     #define M_PI 3.14159265358979323846
 #endif
 
-// Pins
-#define PIN_RES		27
-#define PIN_CS		8
-#define PIN_D0		25
-#define PIN_D1		26
-#define PIN_DC		NRF_GPIO_PIN_MAP(1, 12)
-#define PIN_BOOST	6
+#define RES_HI()	nrf_gpio_pin_set(OLED_PIN_RES)
+#define RES_LO()	nrf_gpio_pin_clear(OLED_PIN_RES)
+#define CS_HI()		nrf_gpio_pin_set(OLED_PIN_CS)
+#define CS_LO()		nrf_gpio_pin_clear(OLED_PIN_CS)
+#define D0_HI()		nrf_gpio_pin_set(OLED_PIN_D0)
+#define D0_LO()		nrf_gpio_pin_clear(OLED_PIN_D0)
+#define D1_HI()		nrf_gpio_pin_set(OLED_PIN_D1)
+#define D1_LO()		nrf_gpio_pin_clear(OLED_PIN_D1)
+#define DC_HI()		nrf_gpio_pin_set(OLED_PIN_DC)
+#define DC_LO()		nrf_gpio_pin_clear(OLED_PIN_DC)
 
-#define RES_HI()	nrf_gpio_pin_set(PIN_RES)
-#define RES_LO()	nrf_gpio_pin_clear(PIN_RES)
-#define CS_HI()		nrf_gpio_pin_set(PIN_CS)
-#define CS_LO()		nrf_gpio_pin_clear(PIN_CS)
-#define D0_HI()		nrf_gpio_pin_set(PIN_D0)
-#define D0_LO()		nrf_gpio_pin_clear(PIN_D0)
-#define D1_HI()		nrf_gpio_pin_set(PIN_D1)
-#define D1_LO()		nrf_gpio_pin_clear(PIN_D1)
-#define DC_HI()		nrf_gpio_pin_set(PIN_DC)
-#define DC_LO()		nrf_gpio_pin_clear(PIN_DC)
-
-#define BOOST_ON()	nrf_gpio_pin_set(PIN_BOOST)
-#define BOOST_OFF()	nrf_gpio_pin_clear(PIN_BOOST)
+#define BOOST_ON()	nrf_gpio_pin_set(OLED_PIN_BOOST)
+#define BOOST_OFF()	nrf_gpio_pin_clear(OLED_PIN_BOOST)
 
 #define DELAY()		__NOP()
 
@@ -67,12 +60,12 @@ static int m_display_offset_x = 0;
 static int m_display_offset_y = 0;
 
 void oled_init(void) {
-	nrf_gpio_cfg_output(PIN_RES);
-	nrf_gpio_cfg_output(PIN_CS);
-	nrf_gpio_cfg_output(PIN_D0);
-	nrf_gpio_cfg_output(PIN_D1);
-	nrf_gpio_cfg_output(PIN_DC);
-	nrf_gpio_cfg_output(PIN_BOOST);
+	nrf_gpio_cfg_output(OLED_PIN_RES);
+	nrf_gpio_cfg_output(OLED_PIN_CS);
+	nrf_gpio_cfg_output(OLED_PIN_D0);
+	nrf_gpio_cfg_output(OLED_PIN_D1);
+	nrf_gpio_cfg_output(OLED_PIN_DC);
+	nrf_gpio_cfg_output(OLED_PIN_BOOST);
 
 	DC_LO();
 	BOOST_ON();

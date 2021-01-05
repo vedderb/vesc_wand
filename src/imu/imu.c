@@ -17,6 +17,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
     */
 
+#include "conf_general.h"
 #include "imu.h"
 #include "bmi160.h"
 #include "ahrs.h"
@@ -53,7 +54,7 @@ static void user_delay_ms(uint32_t ms);
 static void imu_sleep_sense(void);
 static void imu_sleep(void);
 
-void imu_init(int scl_pin, int sda_pin) {
+bool imu_init(int scl_pin, int sda_pin) {
 	s_i2c.scl_pin = scl_pin;
 	s_i2c.sda_pin = sda_pin;
 
@@ -67,7 +68,11 @@ void imu_init(int scl_pin, int sda_pin) {
 	sensor.write = user_i2c_write;
 	sensor.delay_ms = user_delay_ms;
 
-	bmi160_init(&sensor);
+	bool ok = bmi160_init(&sensor) == BMI160_OK;
+
+	if (!ok) {
+		return false;
+	}
 
 	sensor.accel_cfg.odr = BMI160_ACCEL_ODR_100HZ;
 	sensor.accel_cfg.range = BMI160_ACCEL_RANGE_16G;
@@ -79,7 +84,9 @@ void imu_init(int scl_pin, int sda_pin) {
 	sensor.gyro_cfg.bw = BMI160_GYRO_BW_NORMAL_MODE;
 	sensor.gyro_cfg.power = BMI160_GYRO_NORMAL_MODE;
 
-	bmi160_set_sens_conf(&sensor);
+	ok = bmi160_set_sens_conf(&sensor) == BMI160_OK;
+
+	return ok;
 }
 
 float imu_get_roll(void) {
@@ -198,7 +205,14 @@ static void imu_sleep(void) {
 }
 
 static void imu_sample_thd(void) {
-	imu_init(NRF_GPIO_PIN_MAP(1, 2), NRF_GPIO_PIN_MAP(1, 3));
+	if (!imu_init(PIN_IMU_SCL, PIN_IMU_SDA)) {
+		nrf_gpio_cfg_default(PIN_IMU_SCL);
+		nrf_gpio_cfg_default(PIN_IMU_SDA);
+
+		for (;;) {
+			k_msleep(100);
+		}
+	}
 
 	uint32_t start = k_cycle_get_32();
 
@@ -207,8 +221,8 @@ static void imu_sample_thd(void) {
 			imu_sleep();
 			(void)imu_sleep_sense;
 
-			nrf_gpio_cfg_default(NRF_GPIO_PIN_MAP(1, 2));
-			nrf_gpio_cfg_default(NRF_GPIO_PIN_MAP(1, 3));
+			nrf_gpio_cfg_default(PIN_IMU_SCL);
+			nrf_gpio_cfg_default(PIN_IMU_SDA);
 
 			for(;;) {
 				k_msleep(100);

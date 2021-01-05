@@ -22,7 +22,7 @@
 
 #include "ahrs.h"
 
-void imu_init(int scl_pin, int sda_pin);
+bool imu_init(int scl_pin, int sda_pin);
 float imu_get_roll(void);
 float imu_get_pitch(void);
 float imu_get_yaw(void);

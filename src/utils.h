@@ -41,4 +41,9 @@ void utils_step_towards_int(int *value, int goal, int step);
  */
 #define UTILS_LP_FAST(value, sample, filter_constant)	(value -= (filter_constant) * (value - (sample)))
 
+/**
+ * Calculate sign of x
+ */
+#define UTILS_SIGN(x)		(x > 0.0 ? 1.0 : -1.0)
+
 #endif /* UTILS_H_ */

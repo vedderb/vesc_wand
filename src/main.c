@@ -22,8 +22,13 @@
 #include <drivers/gpio.h>
 #include <drivers/adc.h>
 #include <nrfx.h>
+
+#if defined(CONFIG_SOC_NRF52840)
 #include <nrf52840.h>
-//#include <nrf52.h>
+#else
+#include <nrf52.h>
+#endif
+
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
@@ -34,6 +39,7 @@
 #include <fs/nvs.h>
 #include <storage/flash_map.h>
 
+#include "conf_general.h"
 #include "nrf_esb.h"
 #include "crc.h"
 #include "utils.h"
@@ -42,29 +48,16 @@
 #include "fonts.h"
 #include "imu.h"
 #include "datatypes.h"
+#include "als31300.h"
+#include "lis2dh12.h"
+
+#include "deca_port.h"
+#include "deca_range.h"
+#include "deca_device_api.h"
 
 #ifndef M_PI
     #define M_PI 3.14159265358979323846
 #endif
-
-// Defines
-#define FW_MAJOR		1
-#define FW_MINOR		3
-
-#define SW1_PIN			19
-#define SW1_PIN2		NRF_GPIO_PIN_MAP(1, 1)
-#define SW2_PIN			13
-#define JS_GND_PIN		21
-#define JS_C_PIN		2
-
-#define SW1				(!nrf_gpio_pin_read(SW1_PIN) || !nrf_gpio_pin_read(SW1_PIN2))
-#define SW2				!nrf_gpio_pin_read(SW2_PIN)
-
-#define JS_OFF()		nrf_gpio_pin_set(JS_GND_PIN)
-#define JS_ON()			nrf_gpio_pin_clear(JS_GND_PIN)
-
-#define ADC_CH_JS		1
-#define ADC_CH_BATT		9 // 9 is internal VDD
 
 typedef struct {
 	volatile bool use_imperial_units;
@@ -89,6 +82,12 @@ static volatile int screen_now = 0;
 static volatile bool mote_locked = false;
 static volatile bool intro_done = false;
 
+#ifdef PIN_ALS_SDA
+static volatile float als_mag_xyz[3] = {0.0};
+static volatile float als2_mag_xyz[3] = {0.0};
+static volatile float als_throttle[2] = {0.0};
+#endif
+
 static struct nvs_fs fs;
 static conf_data conf;
 
@@ -100,7 +99,30 @@ struct esb_info {
 // Global variables
 volatile bool going_to_sleep = false;
 
-void esb_event_handler(struct nrf_esb_evt const *event) {
+static void decode_packet(uint8_t *data, int len) {
+	esb_rx_cnt++;
+	esb_no_rx_cnt = 0;
+
+	if (len >= 15 && data[0] == MOTE_PACKET_ALIVE) {
+		int32_t index = 1;
+		vesc_val.rx_cnt++;
+		vesc_val.battery_level = buffer_get_float16(data, 1e3, &index);
+		vesc_val.speed = buffer_get_float32(data, 1e3, &index);
+		vesc_val.distance = buffer_get_float32(data, 1e3, &index);
+		vesc_val.temp_fet = buffer_get_float16(data, 1e1, &index);
+		vesc_val.temp_motor = buffer_get_float16(data, 1e1, &index);
+		index++; // Skip sequence number
+
+		if (len >= 28) {
+			vesc_val.wh_left = buffer_get_float32(data, 1e3, &index);
+			vesc_val.wh_used = buffer_get_float32(data, 1e4, &index);
+			vesc_val.wh_charged = buffer_get_float32(data, 1e4, &index);
+			vesc_val.curr_prop = (float)((int8_t)data[index++]) / 100.0;
+		}
+	}
+}
+
+static void esb_event_handler(struct nrf_esb_evt const *event) {
 	switch (event->evt_id) {
 	case NRF_ESB_EVENT_TX_SUCCESS:
 		break;
@@ -115,7 +137,7 @@ void esb_event_handler(struct nrf_esb_evt const *event) {
 	}
 }
 
-void handle_esb_rx(struct k_work *item) {
+static void handle_esb_rx(struct k_work *item) {
 	struct esb_info *info = CONTAINER_OF(item, struct esb_info, work);
 
 	if (info->rx_payload.length > 0) {
@@ -124,26 +146,7 @@ void handle_esb_rx(struct k_work *item) {
 		uint16_t crc_calc = crc16_2(info->rx_payload.data, info->rx_payload.length - 2);
 
 		if (crc == crc_calc) {
-			esb_rx_cnt++;
-			esb_no_rx_cnt = 0;
-
-			if (info->rx_payload.data[0] == MOTE_PACKET_ALIVE && info->rx_payload.length >= 15) {
-				int32_t index = 1;
-				vesc_val.rx_cnt++;
-				vesc_val.battery_level = buffer_get_float16(info->rx_payload.data, 1e3, &index);
-				vesc_val.speed = buffer_get_float32(info->rx_payload.data, 1e3, &index);
-				vesc_val.distance = buffer_get_float32(info->rx_payload.data, 1e3, &index);
-				vesc_val.temp_fet = buffer_get_float16(info->rx_payload.data, 1e1, &index);
-				vesc_val.temp_motor = buffer_get_float16(info->rx_payload.data, 1e1, &index);
-				index++; // Skip sequence number
-
-				if (info->rx_payload.length >= 28) {
-					vesc_val.wh_left = buffer_get_float32(info->rx_payload.data, 1e3, &index);
-					vesc_val.wh_used = buffer_get_float32(info->rx_payload.data, 1e4, &index);
-					vesc_val.wh_charged = buffer_get_float32(info->rx_payload.data, 1e4, &index);
-					vesc_val.curr_prop = (float)((int8_t)info->rx_payload.data[index++]) / 100.0;
-				}
-			}
+			decode_packet(info->rx_payload.data, info->rx_payload.length);
 		}
 	}
 }
@@ -161,8 +164,11 @@ int esb_init(void) {
 	nrf_esb_config.mode = NRF_ESB_MODE_PTX;
 	nrf_esb_config.selective_auto_ack = false;
 	nrf_esb_config.crc = NRF_ESB_CRC_8BIT;
+#ifdef WAND_DW
+	nrf_esb_config.tx_output_power = NRF_ESB_TX_POWER_4DBM;
+#else
 	nrf_esb_config.tx_output_power = NRF_ESB_TX_POWER_8DBM;
-//	nrf_esb_config.tx_output_power = NRF_ESB_TX_POWER_4DBM;
+#endif
 
 	int err;
 
@@ -344,6 +350,10 @@ void go_to_sleep(void) {
 	NRF_WDT->RR[0] = WDT_RR_RR_Reload;
 	nvs_write(&fs, CONF_DATA_ID, &conf, sizeof(conf));
 
+#ifdef WAND_DW
+	deca_port_go_to_sleep();
+#endif
+
 	JS_OFF();
 	nrf_gpio_cfg_sense_input(SW1_PIN, NRF_GPIO_PIN_PULLUP, NRF_GPIO_PIN_SENSE_LOW);
 	nrf_gpio_cfg_sense_input(SW1_PIN2, NRF_GPIO_PIN_PULLUP, NRF_GPIO_PIN_SENSE_LOW);
@@ -381,6 +391,10 @@ void go_to_sleep_long_press(void) {
 	NRF_WDT->RR[0] = WDT_RR_RR_Reload;
 	nvs_write(&fs, CONF_DATA_ID, &conf, sizeof(conf));
 
+#ifdef WAND_DW
+	deca_port_go_to_sleep();
+#endif
+
 	JS_OFF();
 	nrf_gpio_cfg_sense_input(SW1_PIN, NRF_GPIO_PIN_PULLUP, NRF_GPIO_PIN_SENSE_LOW);
 	nrf_gpio_cfg_sense_input(SW1_PIN2, NRF_GPIO_PIN_PULLUP, NRF_GPIO_PIN_SENSE_LOW);
@@ -388,11 +402,53 @@ void go_to_sleep_long_press(void) {
 	NRF_POWER->SYSTEMOFF = 1;
 }
 
+#ifdef WAND_DW
+static volatile float dw_last_dist = 0.0;
+static volatile uint8_t dw_last_id;
+static void dw_range_func(float dist, uint8_t id) {
+	dw_last_dist = dist;
+	dw_last_id = id;
+}
+
+static void dw_packet_func(uint8_t sender, uint8_t *buffer, int len) {
+	uint32_t uuid = crc32c((uint8_t*)NRF_FICR->DEVICEADDR, 6);
+	uint8_t addr0 = uuid & 0xFF;
+	uint8_t addr1 = (uuid >> 8) & 0xFF;
+	uint8_t addr2 = (uuid >> 16) & 0xFF;
+	uint8_t ch = (uuid >> 24) & 0x3F;
+
+	if (len >= 4 && sender == ch &&
+			buffer[0] == addr0 &&
+			buffer[1] == addr1 &&
+			buffer[2] == addr2) {
+		decode_packet(buffer + 3, len - 3);
+	}
+}
+#endif
+
 void main(void) {
 	nrf_gpio_cfg_input(SW1_PIN, NRF_GPIO_PIN_PULLUP);
 	nrf_gpio_cfg_input(SW1_PIN2, NRF_GPIO_PIN_PULLUP);
 	nrf_gpio_cfg_input(SW2_PIN, NRF_GPIO_PIN_PULLUP);
+
+#ifdef JS_GND_PIN
 	nrf_gpio_cfg_output(JS_GND_PIN);
+#endif
+
+#ifdef WAND_DW
+	deca_port_init();
+
+	if (dwt_initialise(DWT_LOADUCODE) == DWT_ERROR) {
+//		for (;;) {
+//
+//		}
+	}
+
+	deca_port_set_spi_fast();
+	deca_range_configure(254);
+	deca_range_set_range_func(dw_range_func);
+	deca_range_set_data_func(dw_packet_func);
+#endif
 
 	// TODO: Test performance with
 	// https://devzone.nordicsemi.com/f/nordic-q-a/15093/change-clock-speed-nrf52
@@ -460,6 +516,8 @@ void main(void) {
 	float sw1_time = 0.0;
 	float sw2_time = 0.0;
 	bool imperial_toggled = false;
+
+	float loop_hz = 50.0;
 
 	// Wait for buttons to be released
 	while(SW1 || SW2) {
@@ -558,13 +616,13 @@ void main(void) {
 		was_bt_z = bt_z;
 
 		if (SW1 || was_sw_both) {
-			sw1_time += 0.02;
+			sw1_time += 1.0 / loop_hz;
 		} else {
 			sw1_time = 0.0;
 		}
 
 		if (SW2 || was_sw_both) {
-			sw2_time += 0.02;
+			sw2_time += 1.0 / loop_hz;
 		} else {
 			sw2_time = 0.0;
 		}
@@ -606,10 +664,35 @@ void main(void) {
 		esb_wait_idle();
 		nrf_esb_start_rx();
 
-		k_msleep(20);
+#ifdef WAND_DW
+		uint8_t pl_dw[index + 3];
+		uint32_t uuid = crc32c((uint8_t*)NRF_FICR->DEVICEADDR, 6);
+		pl_dw[0] = uuid & 0xFF;
+		pl_dw[1] = (uuid >> 8) & 0xFF;
+		pl_dw[2] = (uuid >> 16) & 0xFF;
+		uint8_t ch = (uuid >> 24) & 0x3F;
+		memcpy(pl_dw + 3, pl, index);
+
+		deca_range_set_address(ch);
+
+#if 1
+		deca_range_send_data(ch, pl_dw, index + 3);
+#else
+		static int div = 0.0;
+		div++;
+		if (div > 5) {
+			div = 0;
+			deca_range_measure(ch, 2);
+		} else {
+			deca_range_send_data(ch, pl_dw, index + 3);
+		}
+#endif
+#endif
+
+		k_msleep(1000 / loop_hz);
 
 		esb_no_rx_cnt++;
-		if (esb_no_rx_cnt >= 1000) {
+		if (((float)esb_no_rx_cnt / loop_hz) >= 30.0) {
 			go_to_sleep();
 		}
 	}
@@ -794,6 +877,20 @@ void display_thd(void) {
 
 			oled_printf_aa(font_aa_25x45, 39 + (roundf(speed) < 10.0 ? 13 : 0), 44, 15, "%.0f", speed);
 
+			// Print DW measured range
+//			float dist_cm = dw_last_dist * 100.0;
+//			oled_printf_aa(font_aa_25x45, 39 + (roundf(dist_cm) < 10.0 ? 13 : 0), 44, 15, "%.0f", dist_cm);
+
+			// Print ALS31300 data
+//			oled_printf_aa(font_aa_11x21, 40, 10, 10, "%.2f", als_throttle[0]);
+//			oled_printf_aa(font_aa_11x21, 40, 31, 10, "%.2f", als_throttle[1]);
+//			oled_printf_aa(font_aa_11x21, 20, 48, 10, "%.0f", als_mag_xyz[0]);
+//			oled_printf_aa(font_aa_11x21, 20, 69, 10, "%.0f", als_mag_xyz[1]);
+//			oled_printf_aa(font_aa_11x21, 20, 90, 10, "%.0f", als_mag_xyz[2]);
+//			oled_printf_aa(font_aa_11x21, 70, 48, 10, "%.0f", als2_mag_xyz[0]);
+//			oled_printf_aa(font_aa_11x21, 70, 69, 10, "%.0f", als2_mag_xyz[1]);
+//			oled_printf_aa(font_aa_11x21, 70, 90, 10, "%.0f", als2_mag_xyz[2]);
+
 			// Print difference between pull-samples for joystick.
 //			oled_printf_aa(font_aa_11x21, 31, 100, 15, "%.2f", v_js_avg_diff);
 
@@ -956,26 +1053,47 @@ void adc_sample_thd(void) {
 	struct adc_channel_cfg channel_cfg;
 
 	channel_cfg.channel_id = 0;
-	channel_cfg.gain = ADC_GAIN_1_4;
-	channel_cfg.reference = ADC_REF_VDD_1_4;
-	channel_cfg.acquisition_time = ADC_ACQ_TIME_DEFAULT;
-	channel_cfg.input_positive = ADC_CH_JS;
-	channel_cfg.differential = 0;
-	channel_cfg.input_negative = 0;
-
-	adc_channel_setup(adc_dev, &channel_cfg);
-
-	channel_cfg.channel_id = 1;
 	channel_cfg.gain = ADC_GAIN_1_6;
 	channel_cfg.reference = ADC_REF_INTERNAL;
 	channel_cfg.acquisition_time = ADC_ACQ_TIME_DEFAULT;
 	channel_cfg.input_positive = ADC_CH_BATT;
 	channel_cfg.differential = 0;
 	channel_cfg.input_negative = 0;
-
 	adc_channel_setup(adc_dev, &channel_cfg);
 
-	static s16_t sample;
+#ifdef ADC_CH_JS
+	channel_cfg.channel_id = 1;
+	channel_cfg.gain = ADC_GAIN_1_4;
+	channel_cfg.reference = ADC_REF_VDD_1_4;
+	channel_cfg.acquisition_time = ADC_ACQ_TIME_DEFAULT;
+	channel_cfg.input_positive = ADC_CH_JS;
+	channel_cfg.differential = 0;
+	channel_cfg.input_negative = 0;
+	adc_channel_setup(adc_dev, &channel_cfg);
+#endif
+
+#ifdef PIN_ALS_SDA
+	i2c_bb_state i2c;
+	i2c.sda_pin = PIN_ALS_SDA;
+	i2c.scl_pin = PIN_ALS_SCL;
+	i2c_bb_init(&i2c);
+
+	als31300_sleep(&i2c, 96, 0);
+	als31300_sleep(&i2c, 108, 0);
+#endif
+
+	// Put accelerometer in sleep mode to save power
+#ifdef PIN_LIS_SDA
+	i2c_bb_state i2c_imu;
+	i2c_imu.sda_pin = PIN_LIS_SDA;
+	i2c_imu.scl_pin = PIN_LIS_SCL;
+	i2c_bb_init(&i2c_imu);
+	lis2dh12_sleep(&i2c_imu, LIS_I2C_ADDR);
+	nrf_gpio_cfg_default(PIN_LIS_SDA);
+	nrf_gpio_cfg_default(PIN_LIS_SCL);
+#endif
+
+	s16_t sample;
 	struct adc_sequence seq;
 
 	seq.options = NULL;
@@ -989,15 +1107,82 @@ void adc_sample_thd(void) {
 		NRF_WDT->RR[2] = WDT_RR_RR_Reload;
 
 		if (going_to_sleep) {
+#ifdef PIN_ALS_SDA
+			als31300_sleep(&i2c, 96, 1);
+			als31300_sleep(&i2c, 108, 1);
+
+			nrf_gpio_cfg_default(PIN_ALS_SDA);
+			nrf_gpio_cfg_default(PIN_ALS_SCL);
+#endif
+
 			for(;;) {
 				NRF_WDT->RR[2] = WDT_RR_RR_Reload;
 				k_msleep(10);
 			}
 		}
 
+#ifdef PIN_ALS_SDA
+		{
+			bool ok1 = als31300_read_mag_xyz(&i2c, 96, (float*)als_mag_xyz);
+			bool ok2 = als31300_read_mag_xyz(&i2c, 108, (float*)als2_mag_xyz);
+
+			if (ok1) {
+				static float mag_max = 0.0;
+				static float mag_min = 70.0;
+				float mag = fabsf(als_mag_xyz[1]);
+
+				/*
+				 * The throttle will have the maximum magnitude in the neutral position. Capture that
+				 * magnitude up to 5 seconds after boot.
+				 */
+				if (k_uptime_get() < 5000) {
+					if (mag > mag_max) {
+						mag_max = mag;
+					}
+				}
+
+				// 5 % deadband
+				mag *= 1.05;
+
+				als_throttle[0] = utils_map(mag, mag_max, mag_min, 0.0, 1.0);
+				utils_truncate_number((float*)&(als_throttle[0]), 0.0, 1.0);
+				als_throttle[0] *= -UTILS_SIGN(als_mag_xyz[2]);
+			}
+
+			if (ok2) {
+				static float mag_max2 = 0.0;
+				static float mag_min2 = 70.0;
+				float mag2 = fabsf(als2_mag_xyz[1]);
+
+				if (k_uptime_get() < 5000) {
+					if (mag2 > mag_max2) {
+						mag_max2 = mag2;
+					}
+				}
+
+				// 5 % deadband
+				mag2 *= 1.05;
+
+				als_throttle[1] = utils_map(mag2, mag_max2, mag_min2, 0.0, 1.0);
+				utils_truncate_number((float*)&(als_throttle[1]), 0.0, 1.0);
+				als_throttle[1] *= -UTILS_SIGN(als2_mag_xyz[2]);
+			}
+
+			if (ok1) {
+				v_js = (als_throttle[0] + 1.0) / 2.0;
+			} else if (ok2) {
+				v_js = (als_throttle[1] + 1.0) / 2.0;
+			} else {
+				v_js = 0.5;
+			}
+		}
+#endif
+
+#ifdef ADC_CH_JS
 		JS_ON();
 		k_msleep(1);
-		seq.channels = 1 << 0;
+
+		seq.channels = 1 << 1;
 
 		/*
 		 * Read one nominal sample, one with pull-up and one with
@@ -1041,8 +1226,9 @@ void adc_sample_thd(void) {
 			}
 		}
 		JS_OFF();
+#endif
 
-		seq.channels = 1 << 1;
+		seq.channels = 1 << 0;
 		if (adc_read(adc_dev, &seq) == 0) {
 			UTILS_LP_FAST(v_batt, ((float)sample / 4095.0) * (0.6 * 6.0), 0.02);
 		}
