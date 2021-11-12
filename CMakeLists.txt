@@ -9,6 +9,10 @@ project(stick_remote)
 
 # For the DWM1001
 #add_definitions(-DWAND_DW)
+#add_definitions(-DSABRE)
+
+# For the wand with magnetic throttle
+add_definitions(-DWAND_MAG)
 
 target_sources(app PRIVATE src/main.c)
 target_sources(app PRIVATE src/nrf_esb.c)

@@ -22,3 +22,9 @@
 	mosi-pin = <23>;
 	miso-pin = <24>;
 };
+
+&pwm0 {
+	status = "okay";
+	ch0-pin = <47>;
+	ch0-inverted;
+};

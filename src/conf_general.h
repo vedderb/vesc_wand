@@ -54,6 +54,58 @@
 // ADC Channels
 #define ADC_CH_BATT		1
 
+#elif defined(SABRE)
+
+// Push buttons
+#define SW1_PIN			NRF_GPIO_PIN_MAP(0, 4)
+#define SW1_PIN2		NRF_GPIO_PIN_MAP(0, 4)
+#define SW2_PIN			NRF_GPIO_PIN_MAP(0, 5)
+
+// Magnetic field sensor joystick
+#define PIN_ALS_SDA		NRF_GPIO_PIN_MAP(0, 31)
+#define PIN_ALS_SCL		NRF_GPIO_PIN_MAP(1, 9)
+
+// IMU pins
+#define PIN_IMU_SCL		NRF_GPIO_PIN_MAP(1, 0)
+#define PIN_IMU_SDA		NRF_GPIO_PIN_MAP(1, 1)
+
+// Oled pins
+#define OLED_PIN_RES	NRF_GPIO_PIN_MAP(0, 27)
+#define OLED_PIN_CS		NRF_GPIO_PIN_MAP(0, 8)
+#define OLED_PIN_D0		NRF_GPIO_PIN_MAP(0, 25)
+#define OLED_PIN_D1		NRF_GPIO_PIN_MAP(0, 26)
+#define OLED_PIN_DC		NRF_GPIO_PIN_MAP(1, 12)
+#define OLED_PIN_BOOST	NRF_GPIO_PIN_MAP(0, 3)
+
+// ADC Channels
+#define ADC_CH_BATT		1
+
+#elif defined(WAND_MAG)
+
+// Push buttons
+#define SW1_PIN			NRF_GPIO_PIN_MAP(1, 1)
+#define SW1_PIN2		NRF_GPIO_PIN_MAP(1, 1)
+#define SW2_PIN			NRF_GPIO_PIN_MAP(0, 13)
+
+// Magnetic field sensor joystick
+#define PIN_ALS_SDA		NRF_GPIO_PIN_MAP(0, 29)
+#define PIN_ALS_SCL		NRF_GPIO_PIN_MAP(1, 9)
+#define PIN_ALS_EN		NRF_GPIO_PIN_MAP(0, 11)
+
+#define PIN_IMU_SCL		NRF_GPIO_PIN_MAP(1, 2)
+#define PIN_IMU_SDA		NRF_GPIO_PIN_MAP(1, 3)
+
+// Oled pins
+#define OLED_PIN_RES	NRF_GPIO_PIN_MAP(0, 27)
+#define OLED_PIN_CS		NRF_GPIO_PIN_MAP(0, 8)
+#define OLED_PIN_D0		NRF_GPIO_PIN_MAP(0, 25)
+#define OLED_PIN_D1		NRF_GPIO_PIN_MAP(0, 26)
+#define OLED_PIN_DC		NRF_GPIO_PIN_MAP(1, 12)
+#define OLED_PIN_BOOST	NRF_GPIO_PIN_MAP(0, 6)
+
+// ADC Channels
+#define ADC_CH_BATT		9
+
 #else
 
 // Push buttons

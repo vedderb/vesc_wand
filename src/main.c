@@ -54,6 +54,7 @@
 #include "deca_port.h"
 #include "deca_range.h"
 #include "deca_device_api.h"
+#include <drivers/pwm.h>
 
 #ifndef M_PI
     #define M_PI 3.14159265358979323846
@@ -426,6 +427,8 @@ static void dw_packet_func(uint8_t sender, uint8_t *buffer, int len) {
 }
 #endif
 
+static const struct device *pwm_dev;
+
 void main(void) {
 	nrf_gpio_cfg_input(SW1_PIN, NRF_GPIO_PIN_PULLUP);
 	nrf_gpio_cfg_input(SW1_PIN2, NRF_GPIO_PIN_PULLUP);
@@ -448,6 +451,23 @@ void main(void) {
 	deca_range_configure(254);
 	deca_range_set_range_func(dw_range_func);
 	deca_range_set_data_func(dw_packet_func);
+#endif
+
+#ifdef SABRE
+//	pwm_dev = device_get_binding("PWM_0");
+//	pwm_pin_set_usec(pwm_dev, 47, 2000, 1, 0);
+
+//	float t = 0;
+//	for (;;) {
+//		t += M_PI / 100;
+//		if (t > 2.0 * M_PI) {
+//			t -= 2.0 * M_PI;
+//		}
+//		float v = (sinf(t) + 1.0) / 2.0;
+//		pwm_pin_set_usec(pwm_dev, 47, 2000, v * 2000, 0);
+//		k_msleep(10);
+//	}
+
 #endif
 
 	// TODO: Test performance with
@@ -1073,6 +1093,11 @@ void adc_sample_thd(void) {
 #endif
 
 #ifdef PIN_ALS_SDA
+#ifdef PIN_ALS_EN
+	nrf_gpio_cfg_output(PIN_ALS_EN);
+	nrf_gpio_pin_set(PIN_ALS_EN);
+#endif
+
 	i2c_bb_state i2c;
 	i2c.sda_pin = PIN_ALS_SDA;
 	i2c.scl_pin = PIN_ALS_SCL;
@@ -1113,6 +1138,11 @@ void adc_sample_thd(void) {
 
 			nrf_gpio_cfg_default(PIN_ALS_SDA);
 			nrf_gpio_cfg_default(PIN_ALS_SCL);
+
+#ifdef PIN_ALS_EN
+			nrf_gpio_pin_clear(PIN_ALS_EN);
+#endif
+
 #endif
 
 			for(;;) {
@@ -1168,12 +1198,26 @@ void adc_sample_thd(void) {
 				als_throttle[1] *= -UTILS_SIGN(als2_mag_xyz[2]);
 			}
 
+#ifdef WAND_MAG
+			als_throttle[0] *= -1.0;
+			als_throttle[1] *= -1.0;
+#endif
+
 			if (ok1) {
 				v_js = (als_throttle[0] + 1.0) / 2.0;
+				v_js_fault_samples = 0;
 			} else if (ok2) {
 				v_js = (als_throttle[1] + 1.0) / 2.0;
+				v_js_fault_samples = 0;
 			} else {
-				v_js = 0.5;
+				v_js_fault_samples++;
+
+				// Restore JS to neutral after more than one second
+				// of faulty samples.
+				if (v_js_fault_samples > 200) {
+					v_js = 0.5;
+					v_js_fault_now = true;
+				}
 			}
 		}
 #endif
