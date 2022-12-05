@@ -20,7 +20,7 @@
 
 // Firmware version
 #define FW_MAJOR		1
-#define FW_MINOR		3
+#define FW_MINOR		4
 
 // Pin definitions
 #ifdef WAND_DW

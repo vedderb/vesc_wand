@@ -1,3 +1,7 @@
+=== FW 1.4 ===
+* Increased shutdown timeout to 31 minutes when remote is locked.
+* Only right button can be used for starting.
+
 === FW 1.3 ===
 * Upgraded to zephyr 2.4.99.
 * Ignore first button click at start.

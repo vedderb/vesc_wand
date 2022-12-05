@@ -397,8 +397,8 @@ void go_to_sleep_long_press(void) {
 #endif
 
 	JS_OFF();
-	nrf_gpio_cfg_sense_input(SW1_PIN, NRF_GPIO_PIN_PULLUP, NRF_GPIO_PIN_SENSE_LOW);
-	nrf_gpio_cfg_sense_input(SW1_PIN2, NRF_GPIO_PIN_PULLUP, NRF_GPIO_PIN_SENSE_LOW);
+//	nrf_gpio_cfg_sense_input(SW1_PIN, NRF_GPIO_PIN_PULLUP, NRF_GPIO_PIN_SENSE_LOW);
+//	nrf_gpio_cfg_sense_input(SW1_PIN2, NRF_GPIO_PIN_PULLUP, NRF_GPIO_PIN_SENSE_LOW);
 	nrf_gpio_cfg_sense_input(SW2_PIN, NRF_GPIO_PIN_PULLUP, NRF_GPIO_PIN_SENSE_LOW);
 	NRF_POWER->SYSTEMOFF = 1;
 }
@@ -712,7 +712,7 @@ void main(void) {
 		k_msleep(1000 / loop_hz);
 
 		esb_no_rx_cnt++;
-		if (((float)esb_no_rx_cnt / loop_hz) >= 30.0) {
+		if (((float)esb_no_rx_cnt / loop_hz) >= (mote_locked ? (60.0 * 31.0) : 30.0)) {
 			go_to_sleep();
 		}
 	}
